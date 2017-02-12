@@ -1,0 +1,106 @@
+version: '2'
+services:
+    zookeeper:
+        image: zookeeper:3.4
+        container_name: zookeeper
+        restart: always
+
+    nimbus:
+        image: 31z4/storm:1.0.2
+        container_name: nimbus
+        command: storm nimbus
+        depends_on:
+            - zookeeper
+        links:
+            - zookeeper
+        restart: always
+        ports:
+            - 6627:6627
+
+    supervisor:
+        image: 31z4/storm:1.0.2
+        container_name: supervisor
+        command: storm supervisor
+        depends_on:
+            - nimbus
+            - zookeeper
+        links:
+            - nimbus
+            - zookeeper
+        restart: always
+
+    ui:
+        image: 31z4/storm:1.0.2
+        container_name: ui
+        command: storm ui
+        depends_on:
+            - nimbus
+        links:
+            - nimbus
+        restart: always
+        ports:
+            - 8080:8080
+
+    storm-delpoy-topology:
+        image: 31z4/storm:1.0.2
+        container_name: storm-delpoy-topology
+        command: /storm/deploy-topology.sh
+        depends_on:
+            - nimbus
+        links:
+            - nimbus
+        volumes:
+            - ./storm:/storm
+        restart: none
+
+
+    storm-exporter:
+        build: .
+        container_name: storm-exporter
+        environment:
+            - STORM_UI_HOST=ui:8080
+            - REFRESH_RATE=1
+        depends_on:
+            - ui
+        links:
+            - ui
+        restart: always
+        ports:
+            - 8090:8000
+
+    grafana:
+        image: grafana/grafana
+        container_name: grafana
+        depends_on:
+            - prometheus
+        ports:
+            - 3000:3000
+
+    grafana-delpoy-datasource:
+        build: .
+        container_name: grafana-delpoy-datasource
+        entrypoint: /grafana/add-datasource.sh
+        depends_on:
+            - grafana
+        links:
+            - grafana
+            - prometheus
+        volumes:
+            - ./grafana/:/grafana/
+        restart: none
+
+    prometheus:
+        image: prom/prometheus
+        container_name: prometheus
+        volumes:
+            - ./prometheus/:/etc/prometheus/
+        command:
+            - '-config.file=/etc/prometheus/prometheus.yml'
+        expose:
+            - 9090
+        ports:
+            - 9090:9090
+        links:
+            - storm-exporter    
+        depends_on:
+            - storm-exporter
